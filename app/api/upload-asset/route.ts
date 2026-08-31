@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ cdnUrl });
   } catch (e: unknown) {
+      console.error("[upload-asset] failed:", e);
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
