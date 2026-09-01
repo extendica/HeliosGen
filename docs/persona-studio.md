@@ -21,6 +21,31 @@ upload fixes, model adapters and account settings are unchanged.
 
 ## Deployment gate
 
+### Verified status — 2026-09-01
+
+- Migration `20260901111439_add_persona_studio_workspaces_and_takes` was applied
+  successfully to the existing HeliosGen Supabase project `bpesdfzonrknodebvssv`.
+  The live website's public JavaScript confirms that project URL.
+- Both new tables are empty, have RLS enabled, and deny `SELECT`/`INSERT` to
+  `anon` and `authenticated`. The server role has the required access.
+- Existing tables and records were not modified by this migration.
+- 24 automated tests pass, including mocked cloud user scoping, stale-save
+  rejection, per-user request reservations and unauthenticated route rejection.
+  These are not live, signed-in end-to-end tests.
+- The application branch remains unmerged and is not live. Browser acceptance,
+  authenticated end-to-end checks and an approved paid-generation test remain
+  release gates. No provider credits have been spent during these checks.
+
+Supabase reports informational "RLS Enabled No Policy" notices for the Studio
+tables. This is intentional: browser roles have no table privileges, and only
+user-scoped server routes access them. Existing warnings for the unrelated
+`touch_updated_at` function and disabled leaked-password protection were observed
+but not changed as part of Studio. See Supabase's
+[function search-path guidance](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable)
+and [password protection guidance](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+
+### Setup for other installations
+
 This branch is not a production deployment. Apply `supabase-studio.sql` through an
 authorized Supabase migration connection before making Studio available in cloud
 mode. It creates two new RLS-enabled, service-role-only tables. It does not alter
