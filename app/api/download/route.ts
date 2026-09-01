@@ -7,9 +7,9 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { GUEST_MODE } from "@/lib/guestMode";
+import { isStoredAssetUrl, isUrlWithinBase } from "@/lib/storageConfig";
 
 const ALLOWED_ORIGINS = [
-  process.env.R2_PUBLIC_URL ?? "",
   "https://cdn.kie.ai",
   "https://api.kie.ai",
   "https://replicate.delivery",
@@ -18,7 +18,7 @@ const ALLOWED_ORIGINS = [
 
 function isAllowed(url: string): boolean {
   if (GUEST_MODE && url.startsWith("/generated/")) return true; // local disk, served same-origin
-  return ALLOWED_ORIGINS.some((origin) => url.startsWith(origin));
+  return isStoredAssetUrl(url) || ALLOWED_ORIGINS.some((origin) => isUrlWithinBase(url, origin));
 }
 
 export const runtime = "edge";

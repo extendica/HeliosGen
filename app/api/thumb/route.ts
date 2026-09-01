@@ -1,16 +1,15 @@
 /**
  * GET /api/thumb?url=<r2-url>&w=<width>
  *
- * Fetches an image from our R2 CDN with proper browser headers (avoiding
+ * Fetches an image from our configured storage with proper browser headers (avoiding
  * Cloudflare bot-detection ECONNRESET) and resizes it with sharp.
  * Drop-in replacement for /_next/image for R2 URLs.
  */
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
+import { isStoredAssetUrl } from "@/lib/storageConfig";
 
 export const runtime = "nodejs";
-
-const R2_BASE = (process.env.R2_PUBLIC_URL ?? "").replace(/\/$/, "");
 
 const ALLOWED_WIDTHS = new Set([16, 32, 48, 64, 96, 128, 256, 384, 640, 750, 828, 1080, 1200, 1920, 2048, 3840]);
 
@@ -20,7 +19,7 @@ export async function GET(req: NextRequest) {
   const wParam = Number(searchParams.get("w") ?? "384");
 
   if (!url) return new NextResponse("Missing url", { status: 400 });
-  if (!R2_BASE || !url.startsWith(R2_BASE)) {
+  if (!isStoredAssetUrl(url)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 

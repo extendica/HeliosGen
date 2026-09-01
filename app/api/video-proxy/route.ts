@@ -1,11 +1,12 @@
 /**
  * GET /api/video-proxy?url=<encoded-cdn-url>
  *
- * Proxies a video from our R2 CDN and adds CORS headers so the browser
+ * Proxies a video from our configured storage and adds CORS headers so the browser
  * can draw frames from it to a canvas (needed for frame capture).
  * Forwards Range headers so seeking stays efficient.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { isStoredAssetUrl } from "@/lib/storageConfig";
 
 export const runtime = "edge";
 
@@ -13,9 +14,8 @@ export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get("url");
   if (!url) return new NextResponse("Missing url param", { status: 400 });
 
-  // Security: only proxy our own R2 CDN
-  const r2Base = (process.env.R2_PUBLIC_URL ?? "").replace(/\/$/, "");
-  if (!r2Base || !url.startsWith(r2Base)) {
+  // Only proxy assets from our configured storage buckets.
+  if (!isStoredAssetUrl(url)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 

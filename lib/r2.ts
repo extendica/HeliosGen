@@ -6,6 +6,8 @@ import { hashBuffer, lookupAssetHash, storeAssetHash } from "./assetCache";
 import { GUEST_MODE } from "./guestMode";
 import { stripMetadata } from "./mediaMetadata";
 import * as localStore from "./guest/localStorage";
+import { supabaseAdmin } from "./supabase/admin";
+import { isStoredAssetUrl, isUrlWithinBase, storageBucket, supabaseStorageBase, usesSupabaseStorage } from "./storageConfig";
 
 let _s3: S3Client | null = null;
 
@@ -37,7 +39,7 @@ function ext(contentType: string): string {
   return "jpg";
 }
 
-/** Upload a Buffer to R2 (or local disk in guest mode) and return the public URL. */
+/** Upload to the configured provider (or local disk in guest mode). */
 export async function uploadBuffer(
   buffer: Buffer,
   contentType: string,
@@ -47,25 +49,36 @@ export async function uploadBuffer(
   buffer = await stripMetadata(buffer, contentType);
   const hash = hashBuffer(buffer);
   const cached = await lookupAssetHash(hash);
-  if (cached) return cached;
+  if (cached && (!usesSupabaseStorage() || isUrlWithinBase(cached, supabaseStorageBase()))) return cached;
 
   const key = `${folder}/${randomUUID()}.${ext(contentType)}`;
-  const url = cdnUrl(key);
+  let url: string;
 
-  await getS3().send(
-    new PutObjectCommand({
-      Bucket:      process.env.R2_BUCKET_NAME!,
-      Key:         key,
-      Body:        buffer,
-      ContentType: contentType,
-    })
-  );
+  if (usesSupabaseStorage()) {
+    const storage = supabaseAdmin.storage.from(storageBucket());
+    const { error } = await storage.upload(key, buffer, {
+      contentType,
+      upsert: false,
+    });
+    if (error) throw new Error(`Supabase storage upload failed: ${error.message}`);
+    url = storage.getPublicUrl(key).data.publicUrl;
+  } else {
+    url = cdnUrl(key);
+    await getS3().send(
+      new PutObjectCommand({
+        Bucket:      process.env.R2_BUCKET_NAME!,
+        Key:         key,
+        Body:        buffer,
+        ContentType: contentType,
+      })
+    );
+  }
 
   // Store hash and wait for it
   try {
     await storeAssetHash(hash, url, contentType, buffer.byteLength);
   } catch (err) {
-    console.error("[r2] Failed to store asset hash:", err);
+    console.error("[storage] Failed to store asset hash:", err);
   }
 
   return url;
@@ -92,14 +105,14 @@ function fetchToBuffer(url: string, maxRedirects = 5): Promise<{ buf: Buffer; co
   });
 }
 
-/** Fetch a remote URL, upload to R2 (or local disk in guest mode), return URL. */
+/** Fetch a remote URL, upload to the configured storage, and return its URL. */
 export async function mirrorToR2(sourceUrl: string, folder: string): Promise<string> {
   if (GUEST_MODE) return localStore.mirrorToStorage(sourceUrl, folder);
   const { buf, contentType } = await fetchToBuffer(sourceUrl);
   return uploadBuffer(buf, contentType, folder);
 }
 
-/** Upload a base64 data URL to R2 (or local disk in guest mode), return URL. */
+/** Upload a base64 data URL to the configured storage and return its URL. */
 export async function uploadDataUrl(dataUrl: string, folder: string): Promise<string> {
   if (GUEST_MODE) return localStore.uploadDataUrl(dataUrl, folder);
   const m = dataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
@@ -109,11 +122,10 @@ export async function uploadDataUrl(dataUrl: string, folder: string): Promise<st
   return uploadBuffer(buf, contentType, folder);
 }
 
-/** Resolve any URL to a stored URL (R2 or local disk in guest mode). */
+/** Resolve a URL to stored media. Keep the existing name for caller compatibility. */
 export async function ensureR2(url: string, folder: string): Promise<string> {
   if (GUEST_MODE) return localStore.ensureStorage(url, folder);
-  const cdnBase = process.env.R2_PUBLIC_URL ?? "";
   if (url.startsWith("data:"))        return uploadDataUrl(url, folder);
-  if (cdnBase && url.startsWith(cdnBase)) return url;
+  if (isStoredAssetUrl(url)) return url;
   return mirrorToR2(url, folder);
 }
