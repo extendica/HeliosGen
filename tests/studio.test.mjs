@@ -259,3 +259,95 @@ test("uncertain submissions remain reserved and are never automatically retried"
   assert.equal(t.records[0].state, "unknown");
   assert.equal(t.calls(), 1);
 });
+
+// Exercise the real cloud storage functions against a small PostgREST test double.
+// This checks application query scoping; it does not replace live RLS verification.
+function cloudStorage() {
+  const tables = { studio_workspaces: [], studio_takes: [] };
+  const client = {
+    from(name) {
+      let action = "select", value, single = false;
+      const filters = [];
+      const query = {
+        select() { return query; },
+        eq(key, expected) { filters.push([key, expected]); return query; },
+        order() { return query; },
+        limit() { return query; },
+        maybeSingle() { single = true; return query; },
+        insert(row) { action = "insert"; value = structuredClone(row); return query; },
+        update(row) { action = "update"; value = structuredClone(row); return query; },
+        then(resolve, reject) {
+          return Promise.resolve().then(() => {
+            const rows = tables[name];
+            if (action === "insert") {
+              const duplicate = rows.some(r => r.user_id === value.user_id &&
+                (name === "studio_workspaces" || r.id === value.id));
+              if (duplicate) return { data: null, error: { code: "23505", message: "duplicate" } };
+              rows.push(value);
+              return { data: null, error: null };
+            }
+            const matched = rows.filter(r => filters.every(([k, v]) => r[k] === v));
+            if (action === "update") matched.forEach(r => Object.assign(r, value));
+            return { data: structuredClone(single ? matched[0] ?? null : matched), error: null };
+          }).then(resolve, reject);
+        },
+      };
+      return query;
+    },
+  };
+  return load("../lib/studioStorage.ts", {
+    "server-only": {},
+    "./guestMode": { GUEST_MODE: false },
+    "./supabase/admin": { supabaseAdmin: client },
+    "./studio": studio,
+  });
+}
+
+test("cloud workspaces isolate users and reject stale revisions without overwriting", async () => {
+  const storage = cloudStorage();
+  const a = fixture(), b = fixture();
+  a.projects[0].name = "Alice private project";
+  b.projects[0].name = "Bob private project";
+  await storage.saveStudio("alice", 0, a);
+  await storage.saveStudio("bob", 0, b);
+  a.projects[0].name = "Alice updated";
+  await storage.saveStudio("alice", 1, a);
+  await assert.rejects(storage.saveStudio("alice", 1, b), /another tab/);
+  await assert.rejects(storage.saveStudio("alice", 0, b), /another tab/);
+  assert.equal((await storage.readStudio("alice")).document.projects[0].name, "Alice updated");
+  assert.equal((await storage.readStudio("bob")).document.projects[0].name, "Bob private project");
+  assert.equal((await storage.readStudio("stranger")).document.projects.length, 0);
+});
+
+test("cloud takes scope matching request IDs and updates to their owner", async () => {
+  const storage = cloudStorage();
+  const take = { id: "same-request", projectId: "project", kind: "video",
+    state: "submitting", snapshot: {}, createdAt: new Date().toISOString() };
+  assert.equal(await storage.reserveTake("alice", take), true);
+  assert.equal(await storage.reserveTake("bob", take), true);
+  assert.equal(await storage.reserveTake("alice", take), false);
+  await storage.updateTake("alice", { ...take, state: "submitted", taskId: "alice-task" });
+  await storage.updateTake("stranger", { ...take, taskId: "foreign-task" });
+  assert.equal((await storage.getTakes("alice"))[0].taskId, "alice-task");
+  assert.equal((await storage.getTakes("bob"))[0].state, "submitting");
+  assert.equal((await storage.getTakes("stranger")).length, 0);
+});
+
+test("workspace endpoints reject unauthenticated reads and writes before accessing storage", async () => {
+  let accessed = false;
+  const route = load("../app/api/studio/route.ts", {
+    "@/lib/guestMode": { resolveUserId: async () => null },
+    "@/lib/studio": studio,
+    "@/lib/studioStorage": {
+      readStudio: async () => { accessed = true; },
+      saveStudio: async () => { accessed = true; },
+      StudioConflict: class extends Error {},
+    },
+  });
+  const { NextRequest } = require("next/server");
+  assert.equal((await route.GET(new NextRequest("https://app.example/api/studio"))).status, 401);
+  assert.equal((await route.PUT(new NextRequest("https://app.example/api/studio", {
+    method: "PUT", body: JSON.stringify({ revision: 0, document: fixture() }),
+  }))).status, 401);
+  assert.equal(accessed, false);
+});
