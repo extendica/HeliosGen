@@ -23,8 +23,8 @@ upload fixes, model adapters and account settings are unchanged.
 
 ### Verified status — 2026-09-01
 
-- Migration `20260901111439_add_persona_studio_workspaces_and_takes` was applied
-  successfully to the existing HeliosGen Supabase project `bpesdfzonrknodebvssv`.
+- The additive Studio migration was applied successfully to the existing
+  HeliosGen Supabase project.
   The live website's public JavaScript confirms that project URL.
 - Both new tables are empty, have RLS enabled, and deny `SELECT`/`INSERT` to
   `anon` and `authenticated`. The server role has the required access.
@@ -32,9 +32,30 @@ upload fixes, model adapters and account settings are unchanged.
 - 24 automated tests pass, including mocked cloud user scoping, stale-save
   rejection, per-user request reservations and unauthenticated route rejection.
   These are not live, signed-in end-to-end tests.
-- The application branch remains unmerged and is not live. Browser acceptance,
-  authenticated end-to-end checks and an approved paid-generation test remain
-  release gates. No provider credits have been spent during these checks.
+- The application branch remains unmerged and is not live. Studio browser
+  acceptance and authenticated Studio end-to-end checks remain release gates.
+
+### Paid adapter smoke tests — 2026-09-01
+
+With explicit user approval, two jobs were submitted through the existing live
+HeliosGen gallery, using its normal signed-in Kie connection:
+
+| Test | Result |
+| --- | --- |
+| Nano Banana 2, 1K, 9:16, neutral green mug scene | Done; image saved in Supabase and present after reload |
+| Kling 3.0, standard/720p, 5 seconds, 9:16, sound enabled | Done; video loads after reload, reported duration 5.041667 seconds |
+
+The video used the generated image as its start frame. Database records confirm
+the exact settings, successful status and no reported provider errors. Spending
+remained within the approved test budget. No retries or additional paid jobs
+were submitted. Account balances, task identifiers and asset URLs are deliberately
+excluded from this public report.
+
+These checks exercise the existing adapters, not the undeployed Studio UI, ZIP
+export or Studio job wrapper. The neutral scene does not test avatar identity,
+lip-sync or voice continuity; sound was enabled but audio quality was not reviewed.
+The video record still references `tempfile.aiquickdraw.com`, not owned storage.
+Durable video retention remains a release concern even though reload works today.
 
 Supabase reports informational "RLS Enabled No Policy" notices for the Studio
 tables. This is intentional: browser roles have no table privileges, and only
