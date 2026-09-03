@@ -11,6 +11,7 @@ import { useFolderStore } from "@/lib/folderStore";
 import type { User } from "@supabase/supabase-js";
 import {
   Workflow,
+  Clapperboard,
   Image as ImageIcon,
   Video as VideoIcon,
   Package,
@@ -838,6 +839,7 @@ export function AppSidebar() {
 
   const folderParam = selectedFolderId ? `&folder=${selectedFolderId}` : "";
   const navItems = [
+    { label: "Studio", href: "/studio", icon: Clapperboard, active: pathname === "/studio" },
     { label: "Image", href: `/gallery?tab=images${folderParam}`, icon: ImageIcon, active: pathname === "/gallery" && tab === "images" },
     { label: "Video", href: `/gallery?tab=videos${folderParam}`, icon: VideoIcon, active: pathname === "/gallery" && tab === "videos" },
     { label: "Workflow", href: "/workflow", icon: Workflow, active: pathname === "/workflow" || (pathname.startsWith("/workflow/") && pathname !== "/workflow") },
